@@ -983,17 +983,17 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
             </div>
           )}
 
-          {/* Host Declaration Controls if winnerMode is host_declared and in payout_pending */}
-          {room.status === 'payout_pending' && room.winnerMode === 'host_declared' && isHost && !room.winnerId && (
+          {/* Host Declaration Controls when in payout_pending and winner is not yet decided */}
+          {room.status === 'payout_pending' && isHost && !room.winnerId && (
             <div className="flex items-center space-x-2 w-full justify-end">
               <span className="text-xs font-semibold text-slate-700">Declare Winner:</span>
               <select
                 value={declaredWinner}
                 onChange={(e) => setDeclaredWinner(e.target.value)}
-                className="text-xs border border-slate-300 rounded px-2 py-1"
+                className="text-xs border border-slate-300 rounded px-2 py-1 bg-white"
               >
-                <option value="">Select Player...</option>
-                {room.players.map((p) => (
+                <option value="">Select Remaining Player...</option>
+                {(activeUnfolded.length > 0 ? activeUnfolded : room.players).map((p) => (
                   <option key={p.userId} value={p.userId}>
                     {p.username}
                   </option>
@@ -1002,7 +1002,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
               <button
                 onClick={handleHostDeclare}
                 disabled={!declaredWinner || isSubmitting}
-                className="px-3 py-1 bg-slate-900 text-white text-xs font-bold rounded"
+                className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded shadow-xs"
               >
                 Confirm Winner
               </button>
