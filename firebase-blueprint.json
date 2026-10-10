@@ -1,0 +1,227 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public and private profile data for registered players.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string", "maxLength": 30, "minLength": 2 },
+        "email": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["player", "admin"] },
+        "accountStatus": { "type": "string", "enum": ["active", "suspended"] },
+        "startingGrantClaimed": { "type": "boolean" },
+        "gamesPlayed": { "type": "number" },
+        "gamesWon": { "type": "number" },
+        "loansRepaid": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "username", "role", "accountStatus", "createdAt"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "Virtual coin balance and commitments for a player.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "availableBalance": { "type": "number" },
+        "lockedInGames": { "type": "number" },
+        "reservedInLoans": { "type": "number" },
+        "outstandingBankDebt": { "type": "number" },
+        "outstandingPrivateDebt": { "type": "number" },
+        "totalBalance": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "availableBalance", "lockedInGames", "reservedInLoans", "updatedAt"]
+    },
+    "LedgerTransaction": {
+      "title": "LedgerTransaction",
+      "description": "Immutable double-entry financial transaction record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "transactionType": {
+          "type": "string",
+          "enum": ["grant", "transfer", "bet", "pot_win", "bank_borrow", "bank_repay", "bank_interest", "p2p_offer_reserve", "p2p_disburse", "p2p_repay", "p2p_interest", "p2p_refund", "admin_adjustment"]
+        },
+        "initiatorId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "pending", "failed", "reversed"] },
+        "description": { "type": "string", "maxLength": 200 },
+        "referenceId": { "type": "string" },
+        "entries": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "transactionType", "amount", "status", "createdAt"]
+    },
+    "GameRoom": {
+      "title": "GameRoom",
+      "description": "Real-time Teen Patti-style multiplayer game room.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomCode": { "type": "string", "maxLength": 10 },
+        "name": { "type": "string", "maxLength": 50 },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "minPlayers": { "type": "number" },
+        "maxPlayers": { "type": "number" },
+        "bootAmount": { "type": "number" },
+        "minBet": { "type": "number" },
+        "maxBet": { "type": "number" },
+        "turnDurationSec": { "type": "number" },
+        "winnerMode": { "type": "string", "enum": ["server_rules", "host_declared", "player_voting"] },
+        "status": { "type": "string", "enum": ["waiting", "active", "payout_pending", "completed"] },
+        "currentPot": { "type": "number" },
+        "currentBet": { "type": "number" },
+        "currentTurnPlayerId": { "type": "string" },
+        "turnDeadline": { "type": "number" },
+        "players": { "type": "array" },
+        "winnerId": { "type": "string" },
+        "winnerName": { "type": "string" },
+        "payoutRequest": { "type": "object" },
+        "history": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "roomCode", "name", "hostId", "status", "currentPot", "createdAt"]
+    },
+    "BankLoan": {
+      "title": "BankLoan",
+      "description": "Virtual coin loan issued by the system bank.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "principal": { "type": "number" },
+        "outstandingPrincipal": { "type": "number" },
+        "accruedInterest": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "intervalMinutes": { "type": "number" },
+        "compound": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "paid", "defaulted"] },
+        "lastAccruedAt": { "type": "string" },
+        "nextAccrualAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "principal", "outstandingPrincipal", "interestRate", "status", "createdAt"]
+    },
+    "PrivateLoan": {
+      "title": "PrivateLoan",
+      "description": "Peer-to-peer loan offer and agreement between players.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lenderId": { "type": "string" },
+        "lenderName": { "type": "string" },
+        "borrowerId": { "type": "string" },
+        "borrowerName": { "type": "string" },
+        "principal": { "type": "number" },
+        "outstandingPrincipal": { "type": "number" },
+        "accruedInterest": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "intervalMinutes": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "compound": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending_offer", "active", "paid", "rejected", "cancelled"] },
+        "termsNote": { "type": "string", "maxLength": 200 },
+        "lastAccruedAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "lenderId", "borrowerId", "principal", "interestRate", "status", "createdAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Real-time user notification for banking and game events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 300 },
+        "type": { "type": "string", "enum": ["transfer", "game", "payout", "loan", "system"] },
+        "read": { "type": "boolean" },
+        "link": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "message", "type", "read", "createdAt"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Configurable parameters for banking, loans, and system grants.",
+      "type": "object",
+      "properties": {
+        "startingGrant": { "type": "number" },
+        "bankInterestRate": { "type": "number" },
+        "bankIntervalMinutes": { "type": "number" },
+        "maxBankLoan": { "type": "number" },
+        "maxTransfer": { "type": "number" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["startingGrant", "bankInterestRate", "bankIntervalMinutes", "maxBankLoan"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Audit trail for sensitive administrator and system actions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "performedByEmail": { "type": "string" },
+        "details": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "action", "performedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Player profile documents"
+    },
+    "/wallets/{userId}": {
+      "schema": "Wallet",
+      "description": "Player virtual coin wallet and liability ledger projections"
+    },
+    "/ledger_transactions/{txId}": {
+      "schema": "LedgerTransaction",
+      "description": "Authoritative immutable double-entry ledger transactions"
+    },
+    "/game_rooms/{roomId}": {
+      "schema": "GameRoom",
+      "description": "Multiplayer Teen Patti-style game rooms and live states"
+    },
+    "/bank_loans/{loanId}": {
+      "schema": "BankLoan",
+      "description": "System bank loans issued to players"
+    },
+    "/private_loans/{loanId}": {
+      "schema": "PrivateLoan",
+      "description": "P2P loans between lenders and borrowers"
+    },
+    "/notifications/{notifId}": {
+      "schema": "NotificationItem",
+      "description": "User notifications"
+    },
+    "/system_config/{configId}": {
+      "schema": "SystemConfig",
+      "description": "Global bank and platform configurations"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Administrative actions audit log"
+    },
+    "/admins/{adminId}": {
+      "schema": "UserProfile",
+      "description": "Admin directory for rule-based verification"
+    }
+  }
+}

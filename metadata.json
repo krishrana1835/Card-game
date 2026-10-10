@@ -1,0 +1,6 @@
+{
+  "name": "Teen Patti Virtual Banking & Game",
+  "description": "Full-stack real-time Teen Patti multiplayer betting room and virtual banking platform with double-entry ledger, bank loans, and private lending.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

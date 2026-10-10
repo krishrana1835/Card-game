@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny for unmapped documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connection probe
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Admin collection
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    // User profiles: readable and writable by registered and demo players
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Wallets: balance, game commitments, and loan reserves
+    match /wallets/{userId} {
+      allow read, write: if true;
+    }
+
+    // Double-entry ledger transactions: audit-proof immutable ledger
+    match /ledger_transactions/{txId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+
+    // Game rooms: real-time multiplayer Teen Patti betting rooms
+    match /game_rooms/{roomId} {
+      allow read, write: if true;
+    }
+
+    // Bank loans: system loans
+    match /bank_loans/{loanId} {
+      allow read, write: if true;
+    }
+
+    // Private loans: P2P lending agreements
+    match /private_loans/{loanId} {
+      allow read, write: if true;
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow read, write: if true;
+    }
+
+    // System configuration: bank rate, starting bonus, etc.
+    match /system_config/{configId} {
+      allow read, write: if true;
+    }
+
+    // Audit logs: admin action auditing
+    match /audit_logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+  }
+}
