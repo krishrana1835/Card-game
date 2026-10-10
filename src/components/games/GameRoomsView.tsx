@@ -5,7 +5,7 @@ import {
   WinnerMode,
   RoomVisibility,
 } from '../../types';
-import { createGameRoom, joinGameRoom } from '../../services/gameService';
+import { createGameRoom, joinGameRoom, MIN_POT_BUY_IN } from '../../services/gameService';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { GameRoomDetail } from './GameRoomDetail';
@@ -21,6 +21,9 @@ import {
   ShieldAlert,
   PlayCircle,
   Trophy,
+  CheckCircle2,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 
 export const GameRoomsView: React.FC = () => {
@@ -39,12 +42,16 @@ export const GameRoomsView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Join Room Modal with buy-in stack from account (Min 1,500,000)
+  const [joinModalRoom, setJoinModalRoom] = useState<GameRoom | null>(null);
+  const [joinBuyInAmount, setJoinBuyInAmount] = useState<number>(MIN_POT_BUY_IN);
+
   // Form state
   const [roomName, setRoomName] = useState<string>('Royal Teen Patti Table');
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
   const [minPlayers, setMinPlayers] = useState<number>(2);
   const [maxPlayers, setMaxPlayers] = useState<number>(4);
-  const [bootAmount, setBootAmount] = useState<number>(500000); // Min starting amount for pot is 500,000 Rs
+  const [bootAmount, setBootAmount] = useState<number>(MIN_POT_BUY_IN); // Min table entry from account is 1,500,000 Rs
   const [minBet, setMinBet] = useState<number>(100000);
   const [maxBet, setMaxBet] = useState<number>(10000000);
   const [turnDurationSec, setTurnDurationSec] = useState<number>(30);
@@ -69,8 +76,13 @@ export const GameRoomsView: React.FC = () => {
     e.preventDefault();
     if (!user || !profile) return;
 
+    if (bootAmount < MIN_POT_BUY_IN) {
+      setErrorMsg(`Minimum table amount is ₹${MIN_POT_BUY_IN.toLocaleString()}.`);
+      return;
+    }
+
     if (bootAmount > (wallet?.availableBalance || 0)) {
-      setErrorMsg(`Boot amount (${bootAmount}) exceeds your available balance (${wallet?.availableBalance || 0}).`);
+      setErrorMsg(`Amount (₹${bootAmount.toLocaleString()}) exceeds your available balance (₹${(wallet?.availableBalance || 0).toLocaleString()}).`);
       return;
     }
 
@@ -88,7 +100,8 @@ export const GameRoomsView: React.FC = () => {
       minBet,
       maxBet,
       turnDurationSec,
-      winnerMode
+      winnerMode,
+      bootAmount
     );
 
     setIsSubmitting(false);
@@ -112,13 +125,17 @@ export const GameRoomsView: React.FC = () => {
       return;
     }
 
-    const res = await joinGameRoom(targetRoom.id, user.uid, profile.username);
-    if (res.success) {
+    const isMember = targetRoom.players.some((p) => p.userId === user.uid);
+    if (isMember) {
       setJoinCodeInput('');
       setActiveRoomId(targetRoom.id);
-    } else {
-      setErrorMsg(res.error || 'Failed to join room.');
+      return;
     }
+
+    // Open join stack dialog
+    setErrorMsg(null);
+    setJoinModalRoom(targetRoom);
+    setJoinBuyInAmount(Math.max(MIN_POT_BUY_IN, targetRoom.bootAmount || MIN_POT_BUY_IN));
   };
 
   const handleJoinClick = async (room: GameRoom) => {
@@ -129,9 +146,38 @@ export const GameRoomsView: React.FC = () => {
       return;
     }
 
-    const res = await joinGameRoom(room.id, user.uid, profile.username);
+    // Open join stack dialog
+    setErrorMsg(null);
+    setJoinModalRoom(room);
+    setJoinBuyInAmount(Math.max(MIN_POT_BUY_IN, room.bootAmount || MIN_POT_BUY_IN));
+  };
+
+  const handleConfirmJoin = async () => {
+    if (!user || !profile || !joinModalRoom) return;
+
+    if (joinBuyInAmount < MIN_POT_BUY_IN) {
+      setErrorMsg(`Minimum amount to add from account is ₹${MIN_POT_BUY_IN.toLocaleString()}.`);
+      return;
+    }
+
+    if ((wallet?.availableBalance || 0) < joinBuyInAmount) {
+      setErrorMsg(
+        `Insufficient available balance. You have ₹${(wallet?.availableBalance || 0).toLocaleString()}, but ₹${joinBuyInAmount.toLocaleString()} is required.`
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+
+    const res = await joinGameRoom(joinModalRoom.id, user.uid, profile.username, joinBuyInAmount);
+    setIsSubmitting(false);
+
     if (res.success) {
-      setActiveRoomId(room.id);
+      const roomId = joinModalRoom.id;
+      setJoinModalRoom(null);
+      setJoinCodeInput('');
+      setActiveRoomId(roomId);
     } else {
       setErrorMsg(res.error || 'Failed to join room.');
     }
@@ -424,13 +470,13 @@ export const GameRoomsView: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Boot Entry (Min ₹500,000)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Boot / Table Stack (Min ₹1,500,000)</label>
                   <input
                     type="number"
-                    min={500000}
-                    step={50000}
+                    min={MIN_POT_BUY_IN}
+                    step={100000}
                     value={bootAmount}
-                    onChange={(e) => setBootAmount(Math.max(500000, Number(e.target.value)))}
+                    onChange={(e) => setBootAmount(Math.max(MIN_POT_BUY_IN, Number(e.target.value)))}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold"
                   />
                 </div>
@@ -473,8 +519,8 @@ export const GameRoomsView: React.FC = () => {
               </div>
 
               <div className="p-3 bg-slate-50 rounded-lg text-slate-600 text-[11px] space-y-1">
-                <p>• Boot entry of {bootAmount} coins is automatically escrowed from every player when game starts.</p>
-                <p>• Payout is safeguarded: non-winning participants approve the payout before the pot is credited.</p>
+                <p>• Minimum table stack is ₹1,500,000, automatically debited from each player's account on game start.</p>
+                <p>• Payout is consensus-verified: players approve before escrow funds are credited into the winner's balance.</p>
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
@@ -494,6 +540,123 @@ export const GameRoomsView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Join Room - Add Stack from Account Modal */}
+      {joinModalRoom && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2">
+                <Coins className="w-5 h-5 text-amber-500" />
+                <h3 className="font-bold text-slate-900 text-sm">Join Pot - Add Stack from Account</h3>
+              </div>
+              <button
+                onClick={() => setJoinModalRoom(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-1.5">
+              <div className="flex justify-between text-slate-600">
+                <span>Table Name:</span>
+                <span className="font-semibold text-slate-800">{joinModalRoom.name}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Host:</span>
+                <span className="font-semibold text-slate-800">{joinModalRoom.hostName}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Current Players:</span>
+                <span className="font-semibold text-slate-800">
+                  {joinModalRoom.players.length} / {joinModalRoom.maxPlayers}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600 pt-1 border-t border-slate-200">
+                <span>Your Available Balance:</span>
+                <span
+                  className={`font-bold ${
+                    (wallet?.availableBalance || 0) >= MIN_POT_BUY_IN ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  ₹{(wallet?.availableBalance || 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700">
+                Add Table Stake from Account (Min ₹1,500,000):
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">₹</span>
+                <input
+                  type="number"
+                  min={MIN_POT_BUY_IN}
+                  step={100000}
+                  value={joinBuyInAmount}
+                  onChange={(e) => setJoinBuyInAmount(Number(e.target.value))}
+                  className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* Quick Select Buttons */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[1500000, 2000000, 3000000, 5000000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setJoinBuyInAmount(amt)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
+                      joinBuyInAmount === amt
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ₹{(amt / 100000).toLocaleString()} Lakhs{amt === 1500000 ? ' (Min)' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] space-y-1">
+              <p className="font-semibold flex items-center space-x-1">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 inline mr-1" />
+                Automatic Debit on Game Start:
+              </p>
+              <p>
+                ₹{joinBuyInAmount.toLocaleString()} will be automatically debited and locked from your personal account into the game pot as soon as the host starts the game.
+              </p>
+            </div>
+
+            {errorMsg && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end space-x-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setJoinModalRoom(null)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmJoin}
+                disabled={isSubmitting || (wallet?.availableBalance || 0) < joinBuyInAmount}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+              >
+                {isSubmitting ? 'Joining Table...' : `Join Table (Commit ₹${joinBuyInAmount.toLocaleString()})`}
+              </button>
+            </div>
           </div>
         </div>
       )}

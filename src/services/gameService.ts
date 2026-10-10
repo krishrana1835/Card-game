@@ -23,6 +23,7 @@ import { lockBetCoins, settleGamePayout } from './ledgerService';
 import { Wallet, LedgerEntry } from '../types';
 
 export const POT_BANK_LOAN_DEFAULT = 50000000; // 50,000,000 Rs per pot loan pool
+export const MIN_POT_BUY_IN = 1500000; // Minimum 1,500,000 Rs (15 Lakhs) pot stack required from account
 
 export async function createGameRoom(
   hostId: string,
@@ -35,12 +36,15 @@ export async function createGameRoom(
   minBet: number,
   maxBet: number,
   turnDurationSec: number,
-  winnerMode: WinnerMode
+  winnerMode: WinnerMode,
+  hostBuyInAmount?: number
 ): Promise<{ success: boolean; roomId?: string; error?: string }> {
   try {
     const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const roomsCol = collection(db, 'game_rooms');
     const newRoomRef = doc(roomsCol);
+
+    const effectiveBuyIn = Math.max(MIN_POT_BUY_IN, hostBuyInAmount || MIN_POT_BUY_IN);
 
     const initialPlayer: PlayerInRoom = {
       userId: hostId,
@@ -51,6 +55,7 @@ export async function createGameRoom(
       totalContributed: 0,
       seatNumber: 1,
       inRoomFunds: 0,
+      buyInAmount: effectiveBuyIn,
     };
 
     const initialHistory: GameActionLog[] = [
@@ -59,6 +64,7 @@ export async function createGameRoom(
         userId: hostId,
         username: hostName,
         action: 'join',
+        amount: effectiveBuyIn,
         timestamp: new Date().toISOString(),
       },
     ];
@@ -97,15 +103,22 @@ export async function createGameRoom(
 export async function joinGameRoom(
   roomId: string,
   userId: string,
-  username: string
+  username: string,
+  buyInAmount?: number
 ): Promise<{ success: boolean; error?: string }> {
   const roomRef = doc(db, 'game_rooms', roomId);
+  const walletRef = doc(db, 'wallets', userId);
 
   try {
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(roomRef);
+      const walletSnap = await tx.get(walletRef);
+
       if (!snap.exists()) throw new Error('Game room not found.');
+      if (!walletSnap.exists()) throw new Error('User wallet not found.');
+
       const room = snap.data() as GameRoom;
+      const wallet = walletSnap.data() as Wallet;
 
       if (room.status !== 'waiting') {
         throw new Error('Game already in progress or completed.');
@@ -119,6 +132,13 @@ export async function joinGameRoom(
         throw new Error('Room is currently full.');
       }
 
+      const finalBuyIn = Math.max(MIN_POT_BUY_IN, buyInAmount || MIN_POT_BUY_IN);
+      if (wallet.availableBalance < finalBuyIn) {
+        throw new Error(
+          `Insufficient available account balance. Minimum ₹${finalBuyIn.toLocaleString()} is required from your account to join this pot. Your available balance is ₹${wallet.availableBalance.toLocaleString()}.`
+        );
+      }
+
       const nextSeat = room.players.length + 1;
       const newPlayer: PlayerInRoom = {
         userId,
@@ -128,6 +148,8 @@ export async function joinGameRoom(
         currentBet: 0,
         totalContributed: 0,
         seatNumber: nextSeat,
+        buyInAmount: finalBuyIn,
+        inRoomFunds: 0,
       };
 
       const updatedPlayers = [...room.players, newPlayer];
@@ -138,6 +160,7 @@ export async function joinGameRoom(
           userId,
           username,
           action: 'join',
+          amount: finalBuyIn,
           timestamp: new Date().toISOString(),
         },
       ];
@@ -145,6 +168,50 @@ export async function joinGameRoom(
       tx.update(roomRef, {
         players: updatedPlayers,
         history: newHistory,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return { success: true };
+    });
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updatePlayerBuyIn(
+  roomId: string,
+  userId: string,
+  newAmount: number
+): Promise<{ success: boolean; error?: string }> {
+  if (newAmount < MIN_POT_BUY_IN) {
+    return { success: false, error: `Minimum buy-in amount is ₹${MIN_POT_BUY_IN.toLocaleString()}.` };
+  }
+  const roomRef = doc(db, 'game_rooms', roomId);
+  const walletRef = doc(db, 'wallets', userId);
+
+  try {
+    return await runTransaction(db, async (tx) => {
+      const roomSnap = await tx.get(roomRef);
+      const walletSnap = await tx.get(walletRef);
+      if (!roomSnap.exists()) throw new Error('Room not found');
+      if (!walletSnap.exists()) throw new Error('Wallet not found');
+
+      const room = roomSnap.data() as GameRoom;
+      const wallet = walletSnap.data() as Wallet;
+
+      if (room.status !== 'waiting') throw new Error('Cannot change buy-in while game is in progress');
+      if (wallet.availableBalance < newAmount) {
+        throw new Error(
+          `Insufficient available balance (₹${wallet.availableBalance.toLocaleString()}) for ₹${newAmount.toLocaleString()}.`
+        );
+      }
+
+      const updatedPlayers = room.players.map((p) =>
+        p.userId === userId ? { ...p, buyInAmount: newAmount } : p
+      );
+
+      tx.update(roomRef, {
+        players: updatedPlayers,
         updatedAt: new Date().toISOString(),
       });
 
@@ -203,34 +270,42 @@ export async function startGame(roomId: string, hostId: string): Promise<{ succe
       return { success: false, error: `Waiting for all players to be ready (${unready.map((u) => u.username).join(', ')})` };
     }
 
-    // Deduct boot amount from all players
+    // Automatically debit the committed table amount (minimum 1,500,000 Rs) from all players
     for (const player of room.players) {
+      const debitAmount = Math.max(MIN_POT_BUY_IN, player.buyInAmount || MIN_POT_BUY_IN);
       const lockRes = await lockBetCoins(
         player.userId,
         player.username,
         roomId,
         room.name,
-        room.bootAmount,
+        debitAmount,
         'boot'
       );
       if (!lockRes.success) {
         return {
           success: false,
-          error: `${player.username} has insufficient available balance for boot amount (${room.bootAmount} coins).`,
+          error: `${player.username} has insufficient available balance (needs ₹${debitAmount.toLocaleString()} to start game).`,
         };
       }
     }
 
-    const pot = room.bootAmount * room.players.length;
+    const pot = room.players.reduce(
+      (sum, p) => sum + Math.max(MIN_POT_BUY_IN, p.buyInAmount || MIN_POT_BUY_IN),
+      0
+    );
     const now = Date.now();
     const deadline = now + (room.turnDurationSec || 30) * 1000;
+    const baseBet = room.bootAmount || 500000;
 
-    const updatedPlayers = room.players.map((p) => ({
-      ...p,
-      folded: false,
-      currentBet: room.bootAmount,
-      totalContributed: room.bootAmount,
-    }));
+    const updatedPlayers = room.players.map((p) => {
+      const debitAmount = Math.max(MIN_POT_BUY_IN, p.buyInAmount || MIN_POT_BUY_IN);
+      return {
+        ...p,
+        folded: false,
+        currentBet: baseBet,
+        totalContributed: debitAmount,
+      };
+    });
 
     const firstPlayer = updatedPlayers[0];
 
@@ -249,10 +324,16 @@ export async function startGame(roomId: string, hostId: string): Promise<{ succe
     await updateDoc(roomRef, {
       status: 'active',
       currentPot: pot,
-      currentBet: room.bootAmount,
+      currentBet: baseBet,
       currentTurnPlayerId: firstPlayer.userId,
       turnDeadline: deadline,
-      roundNumber: 1,
+      roundNumber: room.roundNumber || 1,
+      showdownPending: false,
+      showdownCallerId: undefined,
+      showdownCallerName: undefined,
+      winnerId: undefined,
+      winnerName: undefined,
+      payoutRequest: undefined,
       players: updatedPlayers,
       history,
       updatedAt: new Date().toISOString(),
@@ -446,39 +527,63 @@ export async function showdownAction(
     if (!snap.exists()) return { success: false, error: 'Room not found' };
     const room = snap.data() as GameRoom;
 
+    if (room.status !== 'active') return { success: false, error: 'Game is not currently active' };
+
     const activePlayers = room.players.filter((p) => !p.folded);
     if (activePlayers.length < 2) return { success: false, error: 'Showdown requires at least 2 active players' };
 
-    // Cardless Teen Patti variant winner determination
-    // Pick winner based on highest contribution or deterministic seed
-    let winner = activePlayers[0];
-    const rand = Math.floor(Math.random() * activePlayers.length);
-    winner = activePlayers[rand];
+    const player = room.players.find((p) => p.userId === userId);
+    if (!player) return { success: false, error: 'Player not found in room' };
+
+    // Debit money equal to the current chaal being made
+    const showChaal = room.currentBet || room.bootAmount || 500000;
+    const lockRes = await lockBetCoins(
+      userId,
+      player.username,
+      roomId,
+      room.name,
+      showChaal,
+      'show'
+    );
+    if (!lockRes.success) {
+      return {
+        success: false,
+        error: lockRes.error || `Insufficient available balance to pay show chaal (₹${showChaal.toLocaleString()}).`,
+      };
+    }
+
+    const newPot = room.currentPot + showChaal;
+
+    const updatedPlayers = room.players.map((p) =>
+      p.userId === userId
+        ? {
+            ...p,
+            currentBet: showChaal,
+            totalContributed: p.totalContributed + showChaal,
+          }
+        : p
+    );
 
     const actionLog: GameActionLog = {
       id: Math.random().toString(36).substring(7),
       userId,
-      username: room.players.find((p) => p.userId === userId)?.username || 'Player',
+      username: player.username,
       action: 'show',
+      amount: showChaal,
       timestamp: new Date().toISOString(),
     };
 
+    // Do NOT decide the winner automatically - Host will decide between the last 2 remaining players
     await updateDoc(roomRef, {
       status: 'payout_pending',
-      winnerId: winner.userId,
-      winnerName: winner.username,
-      history: [
-        ...(room.history || []),
-        actionLog,
-        {
-          id: Math.random().toString(36).substring(7),
-          userId: winner.userId,
-          username: winner.username,
-          action: 'win',
-          amount: room.currentPot,
-          timestamp: new Date().toISOString(),
-        },
-      ],
+      showdownPending: true,
+      showdownCallerId: userId,
+      showdownCallerName: player.username,
+      winnerId: undefined,
+      winnerName: undefined,
+      currentPot: newPot,
+      players: updatedPlayers,
+      history: [...(room.history || []), actionLog],
       updatedAt: new Date().toISOString(),
     });
 
@@ -507,6 +612,7 @@ export async function hostDeclareWinner(
 
     await updateDoc(roomRef, {
       status: 'payout_pending',
+      showdownPending: false,
       winnerId: winner.userId,
       winnerName: winner.username,
       history: [
@@ -666,13 +772,68 @@ export async function voteOnPayout(
         }))
       );
 
-      if (settleRes.success) {
-        await updateDoc(roomRef, {
-          status: 'completed',
-          updatedAt: new Date().toISOString(),
-        });
+      if (!settleRes.success) {
+        return { success: false, error: settleRes.error || 'Failed to settle pot ledger transaction.' };
       }
+
+      await updateDoc(roomRef, {
+        status: 'completed',
+        updatedAt: new Date().toISOString(),
+      });
     }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function finalizeApprovedPayout(
+  roomId: string
+): Promise<{ success: boolean; error?: string }> {
+  const roomRef = doc(db, 'game_rooms', roomId);
+
+  try {
+    const snap = await getDoc(roomRef);
+    if (!snap.exists()) return { success: false, error: 'Room not found' };
+    const room = snap.data() as GameRoom;
+
+    if (!room.winnerId) return { success: false, error: 'No winner declared for this round' };
+
+    const settleRes = await settleGamePayout(
+      roomId,
+      room.name,
+      room.winnerId,
+      room.winnerName || 'Winner',
+      room.currentPot,
+      room.players.map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        lockedAmount: p.totalContributed,
+      }))
+    );
+
+    if (!settleRes.success) {
+      return { success: false, error: settleRes.error };
+    }
+
+    await updateDoc(roomRef, {
+      status: 'completed',
+      payoutRequest: {
+        ...(room.payoutRequest || {
+          id: Math.random().toString(36).substring(7),
+          winnerId: room.winnerId,
+          winnerName: room.winnerName || 'Winner',
+          pot: room.currentPot,
+          votes: {},
+          threshold: 0,
+          createdAt: new Date().toISOString(),
+          deadline: new Date().toISOString(),
+        }),
+        status: 'approved',
+      },
+      updatedAt: new Date().toISOString(),
+    });
 
     return { success: true };
   } catch (err: any) {
@@ -894,7 +1055,9 @@ export async function addAdditionalFundsToTable(
 }
 
 export async function resetRoomForNextPot(
-  roomId: string
+  roomId: string,
+  userId?: string,
+  username?: string
 ): Promise<{ success: boolean; error?: string }> {
   const roomRef = doc(db, 'game_rooms', roomId);
 
@@ -909,22 +1072,35 @@ export async function resetRoomForNextPot(
       folded: false,
       currentBet: 0,
       totalContributed: 0,
+      buyInAmount: Math.max(MIN_POT_BUY_IN, p.buyInAmount || MIN_POT_BUY_IN),
     }));
 
     const now = new Date().toISOString();
+    const actionLog: GameActionLog = {
+      id: Math.random().toString(36).substring(7),
+      userId: userId || 'system',
+      username: username || 'System',
+      action: 'pot_continued',
+      timestamp: now,
+    };
+
     await updateDoc(roomRef, {
       status: 'waiting',
       currentPot: 0,
-      currentBet: room.bootAmount,
+      currentBet: room.bootAmount || 500000,
       currentTurnPlayerId: undefined,
       turnDeadline: undefined,
       winnerId: undefined,
       winnerName: undefined,
+      showdownPending: false,
+      showdownCallerId: undefined,
+      showdownCallerName: undefined,
       payoutRequest: undefined,
       potBankLoanPool: POT_BANK_LOAN_DEFAULT, // Resets to 50,000,000 Rs for every pot!
       potBankLoansTaken: {},
       players: resetPlayers,
       roundNumber: (room.roundNumber || 1) + 1,
+      history: [...(room.history || []), actionLog],
       updatedAt: now,
     });
 

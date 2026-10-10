@@ -14,10 +14,13 @@ import {
   requestPayoutWinnings,
   voteOnPayout,
   adminOrHostResolveDispute,
+  finalizeApprovedPayout,
   borrowPotBankLoan,
   addAdditionalFundsToTable,
   resetRoomForNextPot,
+  updatePlayerBuyIn,
   POT_BANK_LOAN_DEFAULT,
+  MIN_POT_BUY_IN,
 } from '../../services/gameService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -39,6 +42,9 @@ import {
   PlusCircle,
   Landmark,
   RotateCcw,
+  Eye,
+  Crown,
+  Edit3,
 } from 'lucide-react';
 
 interface GameRoomDetailProps {
@@ -62,6 +68,10 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
   const [addFundsAmount, setAddFundsAmount] = useState<number>(500000);
   const [showPotLoanModal, setShowPotLoanModal] = useState<boolean>(false);
   const [potLoanAmount, setPotLoanAmount] = useState<number>(1000000);
+
+  // Adjust table buy-in stack modal (min 1,500,000)
+  const [showEditStackModal, setShowEditStackModal] = useState<boolean>(false);
+  const [editStackAmount, setEditStackAmount] = useState<number>(MIN_POT_BUY_IN);
 
   // Listen to room document in real-time
   useEffect(() => {
@@ -92,6 +102,20 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
 
     return () => clearInterval(interval);
   }, [room?.turnDeadline, room?.status]);
+
+  // Auto-finalize payout when approved by participants
+  useEffect(() => {
+    if (
+      room &&
+      room.payoutRequest?.status === 'approved' &&
+      room.status !== 'completed' &&
+      !isSubmitting
+    ) {
+      finalizeApprovedPayout(room.id).catch((err) => {
+        console.error('Auto-finalize payout error: ', err);
+      });
+    }
+  }, [room?.status, room?.payoutRequest?.status]);
 
   if (loading) {
     return <div className="p-12 text-center text-sm text-slate-500">Connecting to game room live state...</div>;
@@ -184,6 +208,37 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
     if (!res.success) setActionError(res.error || 'Failed to declare winner');
   };
 
+  const handleHostDeclareDirect = async (winnerId: string) => {
+    if (!user || !room) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    const res = await hostDeclareWinner(room.id, user.uid, winnerId);
+    setIsSubmitting(false);
+    if (!res.success) setActionError(res.error || 'Failed to declare winner');
+  };
+
+  const handleUpdateStack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!room || !user) return;
+    if (editStackAmount < MIN_POT_BUY_IN) {
+      setActionError(`Minimum table stack is ₹${MIN_POT_BUY_IN.toLocaleString()}.`);
+      return;
+    }
+    if ((wallet?.availableBalance || 0) < editStackAmount) {
+      setActionError(`Insufficient account balance (₹${(wallet?.availableBalance || 0).toLocaleString()}).`);
+      return;
+    }
+    setIsSubmitting(true);
+    setActionError(null);
+    const res = await updatePlayerBuyIn(room.id, user.uid, editStackAmount);
+    setIsSubmitting(false);
+    if (res.success) {
+      setShowEditStackModal(false);
+    } else {
+      setActionError(res.error || 'Failed to update table stack');
+    }
+  };
+
   const handleRequestPayout = async () => {
     if (!user) return;
     setIsSubmitting(true);
@@ -208,6 +263,15 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
     const res = await adminOrHostResolveDispute(room.id, user.uid, approved);
     setIsSubmitting(false);
     if (!res.success) setActionError(res.error || 'Failed to resolve dispute');
+  };
+
+  const handleFinalizePayout = async () => {
+    if (!room) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    const res = await finalizeApprovedPayout(room.id);
+    setIsSubmitting(false);
+    if (!res.success) setActionError(res.error || 'Failed to finalize payout');
   };
 
   const handleAddFunds = async (e: React.FormEvent) => {
@@ -242,7 +306,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
     if (!room) return;
     setIsSubmitting(true);
     setActionError(null);
-    const res = await resetRoomForNextPot(room.id);
+    const res = await resetRoomForNextPot(room.id, user?.uid, profile?.username);
     setIsSubmitting(false);
     if (!res.success) setActionError(res.error || 'Failed to start next pot');
   };
@@ -429,9 +493,30 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500">
-                          Contributed: {p.totalContributed.toLocaleString()} coins
-                        </p>
+                        {room.status === 'waiting' ? (
+                          <div>
+                            <p className="text-[11px] text-amber-700 font-semibold">
+                              Stack: ₹{(p.buyInAmount || MIN_POT_BUY_IN).toLocaleString()}
+                            </p>
+                            {isMe && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditStackAmount(p.buyInAmount || MIN_POT_BUY_IN);
+                                  setShowEditStackModal(true);
+                                }}
+                                className="text-[10px] text-indigo-600 hover:text-indigo-800 underline flex items-center space-x-0.5 mt-0.5"
+                              >
+                                <Edit3 className="w-2.5 h-2.5" />
+                                <span>Adjust Stack</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">
+                            Contributed: ₹{p.totalContributed.toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -483,163 +568,285 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
         {(room.status === 'payout_pending' || room.status === 'completed') && (
           <div className="border-t border-slate-200 bg-slate-50 p-5">
             <div className="max-w-2xl mx-auto bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-              <div className="flex items-center space-x-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Round Finished - Winner: {room.winnerName}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Total Pot: {room.currentPot.toLocaleString()} coins. Payout requires participant consensus.
-                  </p>
-                </div>
-              </div>
-
-              {/* State 1: Winner has not clicked Receive Winnings yet */}
-              {!room.payoutRequest && isWinner && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-3">
-                  <p className="text-xs text-emerald-800 font-medium">
-                    Congratulations! Click below to initiate the payout approval request for your winnings.
-                  </p>
-                  <button
-                    onClick={handleRequestPayout}
-                    disabled={isSubmitting}
-                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
-                  >
-                    Receive Winnings ({room.currentPot.toLocaleString()} coins)
-                  </button>
-                </div>
-              )}
-
-              {!room.payoutRequest && !isWinner && (
-                <div className="p-4 bg-slate-100 rounded-lg text-center text-xs text-slate-600">
-                  Waiting for {room.winnerName} to initiate the "Receive Winnings" payout request.
-                </div>
-              )}
-
-              {/* State 2: Payout Request Active and Voting in Progress */}
-              {room.payoutRequest && room.payoutRequest.status === 'pending' && (
+              {!room.winnerId ? (
                 <div className="space-y-4">
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
-                    <p className="font-semibold">Payout Approval Workflow Active</p>
-                    <p className="mt-1 text-slate-600">
-                      Non-winning players must approve the payout before the escrow pot of {room.currentPot.toLocaleString()} coins is released to {room.winnerName}.
+                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
+                    <div className="flex items-center space-x-2 text-purple-900 font-bold text-sm">
+                      <Crown className="w-5 h-5 text-amber-500" />
+                      <span>Showdown Called! Host Must Decide Winner</span>
+                    </div>
+                    <p className="text-xs text-purple-800">
+                      Show was called and a chaal of ₹{room.currentBet.toLocaleString()} was debited into the pot. As per rules, the table host (<strong>{room.hostName}</strong>) must decide the winner from the last two remaining players.
                     </p>
                   </div>
 
-                  {/* Real-time Vote Tracker */}
-                  <div className="border border-slate-200 rounded-lg p-3 text-xs space-y-2">
-                    <div className="flex items-center justify-between font-semibold text-slate-800">
-                      <span>Approval Progress:</span>
-                      <span>
-                        {Object.values(room.payoutRequest.votes).filter((v) => v === 'approve').length} / {room.payoutRequest.threshold} Approvals
-                      </span>
-                    </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {activeUnfolded.slice(0, 2).map((p, idx) => (
+                      <div
+                        key={p.userId}
+                        className="bg-white border-2 border-purple-200 hover:border-purple-300 rounded-xl p-4 shadow-xs flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="w-9 h-9 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs">
+                            {p.seatNumber}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{p.username}</p>
+                            <p className="text-[11px] text-slate-500">
+                              Total Contributed: ₹{p.totalContributed.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
 
-                    <div className="space-y-1">
-                      {room.players
-                        .filter((p) => p.userId !== room.winnerId)
-                        .map((p) => {
-                          const vote = room.payoutRequest?.votes[p.userId];
-                          return (
-                            <div key={p.userId} className="flex items-center justify-between text-slate-600">
-                              <span>{p.username}</span>
-                              <span className="font-medium">
-                                {vote === 'approve' ? (
-                                  <span className="text-emerald-600 flex items-center space-x-1">
-                                    <CheckCircle className="w-3.5 h-3.5" />
-                                    <span>Approved</span>
-                                  </span>
-                                ) : vote === 'dispute' ? (
-                                  <span className="text-rose-600 flex items-center space-x-1">
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    <span>Disputed</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">Pending vote...</span>
-                                )}
-                              </span>
-                            </div>
-                          );
-                        })}
-                    </div>
+                        {isHost ? (
+                          <button
+                            type="button"
+                            onClick={() => handleHostDeclareDirect(p.userId)}
+                            disabled={isSubmitting}
+                            className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center justify-center space-x-1.5"
+                          >
+                            <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                            <span>Declare {p.username} as Winner</span>
+                          </button>
+                        ) : (
+                          <div className="text-[11px] text-slate-500 italic text-center py-2 bg-slate-50 rounded-lg">
+                            Contender #{idx + 1}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
 
-                  {/* Non-winning Player Voting Buttons */}
-                  {!isWinner && (
-                    <div className="flex items-center justify-end space-x-3 pt-2">
-                      <span className="text-xs text-slate-500">Your Vote:</span>
-                      <button
-                        onClick={() => handleVote('approve')}
-                        disabled={isSubmitting || room.payoutRequest.votes[user?.uid || ''] === 'approve'}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        <span>Approve Payout</span>
-                      </button>
-                      <button
-                        onClick={() => handleVote('dispute')}
-                        disabled={isSubmitting || room.payoutRequest.votes[user?.uid || ''] === 'dispute'}
-                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Dispute Payout</span>
-                      </button>
+                  {!isHost && (
+                    <div className="text-center p-3 bg-slate-100 rounded-lg text-xs text-slate-600 font-medium">
+                      Waiting for Table Host ({room.hostName}) to declare the winner between the remaining players...
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* State 3: Disputed State */}
-              {room.payoutRequest && room.payoutRequest.status === 'disputed' && (
-                <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center space-x-2 text-rose-800 text-xs font-bold">
-                    <ShieldAlert className="w-4 h-4 text-rose-600" />
-                    <span>Payout Disputed</span>
+              ) : (
+                <>
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                      <Trophy className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Round Finished - Winner: {room.winnerName}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Total Pot: ₹{room.currentPot.toLocaleString()}. Payout requires participant consensus.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-rose-700">
-                    A participant disputed this payout. Escrow pot is on hold until host or administrator review.
-                  </p>
 
-                  {(isHost || isAdmin) && (
-                    <div className="pt-2 flex items-center space-x-3">
-                      <span className="text-xs font-semibold text-slate-700">Host / Admin Resolution:</span>
+                  {/* State 1: Winner has not clicked Receive Winnings yet */}
+                  {!room.payoutRequest && isWinner && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-center space-y-3">
+                      <p className="text-xs text-emerald-800 font-medium">
+                        Congratulations! Click below to initiate the payout approval request for your winnings.
+                      </p>
                       <button
-                        onClick={() => handleDisputeOverride(true)}
+                        onClick={handleRequestPayout}
                         disabled={isSubmitting}
-                        className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded"
+                        className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
                       >
-                        Override & Settle Pot to Winner
+                        Receive Winnings (₹{room.currentPot.toLocaleString()})
                       </button>
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* State 4: Completed & Settled */}
-              {room.status === 'completed' && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-center space-y-3">
-                  <CheckCircle className="w-7 h-7 text-emerald-600 mx-auto" />
-                  <div>
-                    <p className="text-sm font-bold text-emerald-950">Pot Payout Approved & Credited to Personal Account</p>
-                    <p className="text-xs text-emerald-800 mt-1 max-w-md mx-auto">
-                      ₹{room.currentPot.toLocaleString()} has been transferred directly into <strong>{room.winnerName}</strong>'s main account balance (not held in the room) and recorded in the double-entry ledger.
-                    </p>
-                  </div>
+                  {!room.payoutRequest && !isWinner && (
+                    <div className="p-4 bg-slate-100 rounded-lg text-center text-xs text-slate-600">
+                      Waiting for {room.winnerName} to initiate the "Receive Winnings" payout request.
+                    </div>
+                  )}
 
-                  <div className="pt-2">
-                    <button
-                      onClick={handleResetNextPot}
-                      disabled={isSubmitting}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center space-x-2 mx-auto"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Start Next Pot (Resets ₹50,000,000 Bank Loan)</span>
-                    </button>
-                  </div>
-                </div>
+                  {/* State 2: Payout Request Active and Voting in Progress */}
+                  {room.payoutRequest && room.payoutRequest.status === 'pending' && (
+                    <div className="space-y-4">
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                        <p className="font-semibold">Payout Approval Workflow Active</p>
+                        <p className="mt-1 text-slate-600">
+                          Non-winning players must approve the payout before the escrow pot of ₹{room.currentPot.toLocaleString()} is released to {room.winnerName}.
+                        </p>
+                      </div>
+
+                      {/* Real-time Vote Tracker */}
+                      <div className="border border-slate-200 rounded-lg p-3 text-xs space-y-2">
+                        <div className="flex items-center justify-between font-semibold text-slate-800">
+                          <span>Approval Progress:</span>
+                          <span>
+                            {Object.values(room.payoutRequest.votes).filter((v) => v === 'approve').length} / {room.payoutRequest.threshold} Approvals
+                          </span>
+                        </div>
+
+                        <div className="space-y-1">
+                          {room.players
+                            .filter((p) => p.userId !== room.winnerId)
+                            .map((p) => {
+                              const vote = room.payoutRequest?.votes[p.userId];
+                              return (
+                                <div key={p.userId} className="flex items-center justify-between text-slate-600">
+                                  <span>{p.username}</span>
+                                  <span className="font-medium">
+                                    {vote === 'approve' ? (
+                                      <span className="text-emerald-600 flex items-center space-x-1">
+                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        <span>Approved</span>
+                                      </span>
+                                    ) : vote === 'dispute' ? (
+                                      <span className="text-rose-600 flex items-center space-x-1">
+                                        <XCircle className="w-3.5 h-3.5" />
+                                        <span>Disputed</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 italic">Pending Vote</span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+
+                      {/* Non-winning Player Voting Buttons */}
+                      {!isWinner && (
+                        <div className="flex items-center justify-end space-x-3 pt-2">
+                          <span className="text-xs text-slate-500">Your Vote:</span>
+                          <button
+                            onClick={() => handleVote('approve')}
+                            disabled={isSubmitting || room.payoutRequest.votes[user?.uid || ''] === 'approve'}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Approve Payout</span>
+                          </button>
+                          <button
+                            onClick={() => handleVote('dispute')}
+                            disabled={isSubmitting || room.payoutRequest.votes[user?.uid || ''] === 'dispute'}
+                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center space-x-1"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Dispute Payout</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Host / Admin Override in case of absent players */}
+                      {(isHost || isAdmin) && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-200 pt-3 gap-2">
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            Host / Administrator Control:
+                          </span>
+                          <button
+                            onClick={() => handleDisputeOverride(true)}
+                            disabled={isSubmitting}
+                            className="w-full sm:w-auto px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center justify-center space-x-1"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Settle & Release Pot Now</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* State 3: Disputed State */}
+                  {room.payoutRequest && room.payoutRequest.status === 'disputed' && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 space-y-3">
+                      <div className="flex items-center space-x-2 text-rose-800 text-xs font-bold">
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span>Payout Disputed</span>
+                      </div>
+                      <p className="text-xs text-rose-700">
+                        A participant disputed this payout. Escrow pot is on hold until host or administrator review.
+                      </p>
+
+                      {(isHost || isAdmin) && (
+                        <div className="pt-2 flex items-center space-x-3">
+                          <span className="text-xs font-semibold text-slate-700">Host / Admin Resolution:</span>
+                          <button
+                            onClick={() => handleDisputeOverride(true)}
+                            disabled={isSubmitting}
+                            className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded"
+                          >
+                            Override & Settle Pot to Winner
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* State 3.5: Consensus Approved, Ready to Finalize Escrow */}
+                  {room.payoutRequest && room.payoutRequest.status === 'approved' && room.status !== 'completed' && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-center space-y-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                        <CheckCircle className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-950">
+                          All Players Approved! Escrow Pot Ready to Release
+                        </p>
+                        <p className="text-xs text-emerald-800 mt-1 max-w-md mx-auto">
+                          Every participant has approved the payout. Tap below to finalize the transfer of ₹{room.currentPot.toLocaleString()} directly to {room.winnerName}'s main balance and release locked funds.
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <button
+                          onClick={handleFinalizePayout}
+                          disabled={isSubmitting}
+                          className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>{isSubmitting ? 'Releasing Escrow...' : `Finalize & Release ₹${room.currentPot.toLocaleString()} Pot`}</span>
+                        </button>
+
+                        {(isHost || isAdmin) && (
+                          <button
+                            onClick={handleResetNextPot}
+                            disabled={isSubmitting}
+                            className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center space-x-1"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Continue Pot (Next Round)</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* State 4: Completed & Settled */}
+                  {room.status === 'completed' && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-center space-y-3">
+                      <CheckCircle className="w-7 h-7 text-emerald-600 mx-auto" />
+                      <div>
+                        <p className="text-sm font-bold text-emerald-950">Pot Payout Approved & Credited to Personal Account</p>
+                        <p className="text-xs text-emerald-800 mt-1 max-w-md mx-auto">
+                          ₹{room.currentPot.toLocaleString()} has been transferred directly into <strong>{room.winnerName}</strong>'s main account balance (not held in the room) and recorded in the double-entry ledger.
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <button
+                          onClick={handleResetNextPot}
+                          disabled={isSubmitting}
+                          className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <RotateCcw className="w-4 h-4 text-emerald-400" />
+                          <span>Continue Pot (Next Round)</span>
+                        </button>
+                        <button
+                          onClick={onBack}
+                          className="w-full sm:w-auto px-4 py-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Exit Room & Return to Lobby</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -676,7 +883,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                   }
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
                 >
-                  Start Game (Boot {room.bootAmount} coins each)
+                  Start Game (Debits min ₹15 Lakhs each into Pot)
                 </button>
               )}
             </div>
@@ -725,9 +932,10 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                     <button
                       onClick={handleShowdown}
                       disabled={isSubmitting}
-                      className="flex-1 sm:flex-initial px-3 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-xs text-center"
+                      className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-xs text-center flex items-center justify-center space-x-1"
                     >
-                      Showdown
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Show (Chaal ₹{room.currentBet.toLocaleString()})</span>
                     </button>
                   )}
 
@@ -744,6 +952,34 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                   {currentPlayer?.folded ? 'You folded this round. Waiting for resolution.' : 'Waiting for current player move...'}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Completed Mode Footer Controls */}
+          {room.status === 'completed' && (
+            <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              <div className="flex items-center space-x-2 text-xs text-emerald-950 font-medium">
+                <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>
+                  Winner: <strong>{room.winnerName}</strong> (₹{room.currentPot.toLocaleString()} credited). Table ready for next round!
+                </span>
+              </div>
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <button
+                  onClick={handleResetNextPot}
+                  disabled={isSubmitting}
+                  className="flex-1 sm:flex-initial px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center justify-center space-x-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Continue Pot</span>
+                </button>
+                <button
+                  onClick={onBack}
+                  className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100"
+                >
+                  Exit
+                </button>
+              </div>
             </div>
           )}
 
@@ -907,6 +1143,86 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold rounded-lg shadow-xs"
                 >
                   {isSubmitting ? 'Borrowing...' : `Borrow ₹${potLoanAmount.toLocaleString()}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Adjust Table Stack Amount (Min ₹1,500,000) */}
+      {showEditStackModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <Coins className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Adjust Table Stake</h3>
+                  <p className="text-xs text-slate-500">Amount debited from account on game start (Min ₹1,500,000)</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEditStackModal(false)} className="text-slate-400 font-bold">×</button>
+            </div>
+
+            <form onSubmit={handleUpdateStack} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Table Stake Amount (Min ₹1,500,000):
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 font-bold text-slate-400">₹</span>
+                  <input
+                    type="number"
+                    min={MIN_POT_BUY_IN}
+                    step={100000}
+                    required
+                    value={editStackAmount}
+                    onChange={(e) => setEditStackAmount(Number(e.target.value))}
+                    className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-900"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Available in your account: <strong className="text-emerald-600">₹{(wallet?.availableBalance || 0).toLocaleString()}</strong>
+                </p>
+              </div>
+
+              {/* Quick Select Buttons */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[1500000, 2000000, 3000000, 5000000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setEditStackAmount(amt)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
+                      editStackAmount === amt
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ₹{(amt / 100000).toLocaleString()} Lakhs{amt === 1500000 ? ' (Min)' : ''}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditStackModal(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-lg font-semibold text-slate-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    isSubmitting ||
+                    editStackAmount < MIN_POT_BUY_IN ||
+                    editStackAmount > (wallet?.availableBalance || 0)
+                  }
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold rounded-lg shadow-xs"
+                >
+                  {isSubmitting ? 'Updating...' : `Set Stake to ₹${editStackAmount.toLocaleString()}`}
                 </button>
               </div>
             </form>

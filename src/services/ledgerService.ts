@@ -196,7 +196,7 @@ export async function lockBetCoins(
   roomId: string,
   roomName: string,
   amount: number,
-  actionType: 'boot' | 'chaal' | 'raise'
+  actionType: 'boot' | 'chaal' | 'raise' | 'show'
 ): Promise<{ success: boolean; error?: string }> {
   const walletRef = doc(db, 'wallets', userId);
   const txCollectionRef = collection(db, 'ledger_transactions');
@@ -269,13 +269,13 @@ export async function settleGamePayout(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await runTransaction(db, async (tx) => {
-      // 1. Fetch winner wallet
+      // 1. ALL READS FIRST (Firestore requires all reads before any writes)
+      // Fetch winner wallet
       const winnerWalletRef = doc(db, 'wallets', winnerId);
       const winnerSnap = await tx.get(winnerWalletRef);
       if (!winnerSnap.exists()) throw new Error('Winner wallet not found');
-      const winnerWallet = winnerSnap.data() as Wallet;
 
-      // 2. Fetch all participants' wallets to clear lockedInGames
+      // Fetch all participants' wallets
       const participantDocs: { ref: any; data: Wallet; lockedToClear: number }[] = [];
       for (const p of participants) {
         const pRef = doc(db, 'wallets', p.userId);
@@ -289,16 +289,38 @@ export async function settleGamePayout(
         }
       }
 
+      // Fetch winner user profile
+      const winnerUserRef = doc(db, 'users', winnerId);
+      const winnerUserSnap = await tx.get(winnerUserRef);
+
+      // Fetch other participants' user profiles
+      const otherUserDocs: { ref: any; data: any }[] = [];
+      for (const p of participants) {
+        if (p.userId !== winnerId) {
+          const uRef = doc(db, 'users', p.userId);
+          const uSnap = await tx.get(uRef);
+          if (uSnap.exists()) {
+            otherUserDocs.push({
+              ref: uRef,
+              data: uSnap.data(),
+            });
+          }
+        }
+      }
+
+      // Fetch room doc
+      const roomRef = doc(db, 'game_rooms', roomId);
+      const roomSnap = await tx.get(roomRef);
+
+      // 2. ALL WRITES AFTER READS (NO READS PAST THIS POINT)
       const now = new Date().toISOString();
 
-      // Update participants (clear locked coins)
+      // Update participant wallets (release locked commitments and credit pot to winner)
       for (const pDoc of participantDocs) {
         const currentLocked = pDoc.data.lockedInGames || 0;
         const newLocked = Math.max(0, Math.round((currentLocked - pDoc.lockedToClear) * 100) / 100);
 
         if (pDoc.data.userId === winnerId) {
-          // Winner also receives the pot payout:
-          // Their total balance increases by (pot - their own locked amount)
           const newAvail = Math.round((pDoc.data.availableBalance + potAmount) * 100) / 100;
           const newTotal = Math.round((pDoc.data.totalBalance - pDoc.lockedToClear + potAmount) * 100) / 100;
 
@@ -309,7 +331,6 @@ export async function settleGamePayout(
             updatedAt: now,
           });
         } else {
-          // Non-winner: their locked contribution is now permanently deducted from total balance
           const newTotal = Math.max(0, Math.round((pDoc.data.totalBalance - pDoc.lockedToClear) * 100) / 100);
 
           tx.update(pDoc.ref, {
@@ -320,7 +341,7 @@ export async function settleGamePayout(
         }
       }
 
-      // Ledger entry for pot settlement
+      // Record immutable double-entry ledger transaction
       const entries: LedgerEntry[] = [
         {
           accountType: 'game_escrow_pot',
@@ -347,14 +368,12 @@ export async function settleGamePayout(
         referenceId: roomId,
         amount: potAmount,
         status: 'completed',
-        description: `Winnings payout of ${potAmount.toLocaleString()} coins from room "${roomName}"`,
+        description: `Winnings payout of ₹${potAmount.toLocaleString()} coins from room "${roomName}"`,
         entries,
         createdAt: now,
       });
 
       // Update winner user stats
-      const winnerUserRef = doc(db, 'users', winnerId);
-      const winnerUserSnap = await tx.get(winnerUserRef);
       if (winnerUserSnap.exists()) {
         const u = winnerUserSnap.data();
         tx.update(winnerUserRef, {
@@ -365,17 +384,19 @@ export async function settleGamePayout(
       }
 
       // Update other participants gamesPlayed
-      for (const p of participants) {
-        if (p.userId !== winnerId) {
-          const userRef = doc(db, 'users', p.userId);
-          const uSnap = await tx.get(userRef);
-          if (uSnap.exists()) {
-            tx.update(userRef, {
-              gamesPlayed: ((uSnap.data().gamesPlayed as number) || 0) + 1,
-              updatedAt: now,
-            });
-          }
-        }
+      for (const oDoc of otherUserDocs) {
+        tx.update(oDoc.ref, {
+          gamesPlayed: ((oDoc.data.gamesPlayed as number) || 0) + 1,
+          updatedAt: now,
+        });
+      }
+
+      // Mark room as completed atomically
+      if (roomSnap.exists()) {
+        tx.update(roomRef, {
+          status: 'completed',
+          updatedAt: now,
+        });
       }
     });
 

@@ -345,6 +345,7 @@ export async function repayBankLoan(
     await runTransaction(db, async (tx) => {
       const loanSnap = await tx.get(loanRef);
       const walletSnap = await tx.get(walletRef);
+      const userSnap = await tx.get(userRef);
 
       if (!loanSnap.exists()) throw new Error('Loan not found');
       if (!walletSnap.exists()) throw new Error('Wallet not found');
@@ -401,16 +402,13 @@ export async function repayBankLoan(
         updatedAt: now,
       });
 
-      if (isFullyPaid) {
-        const uSnap = await tx.get(userRef);
-        if (uSnap.exists()) {
-          const u = uSnap.data() as UserProfile;
-          tx.update(userRef, {
-            loansRepaid: (u.loansRepaid || 0) + 1,
-            totalRepaidAmount: Math.round(((u.totalRepaidAmount || 0) + amount) * 100) / 100,
-            updatedAt: now,
-          });
-        }
+      if (isFullyPaid && userSnap.exists()) {
+        const u = userSnap.data() as UserProfile;
+        tx.update(userRef, {
+          loansRepaid: (u.loansRepaid || 0) + 1,
+          totalRepaidAmount: Math.round(((u.totalRepaidAmount || 0) + amount) * 100) / 100,
+          updatedAt: now,
+        });
       }
 
       const entries: LedgerEntry[] = [

@@ -91,13 +91,14 @@ export interface PlayerInRoom {
   totalContributed: number;
   seatNumber: number;
   inRoomFunds?: number; // funds brought to table from main account
+  buyInAmount?: number; // amount from account added when joining (min 1,500,000 Rs)
 }
 
 export interface GameActionLog {
   id: string;
   userId: string;
   username: string;
-  action: 'join' | 'ready' | 'boot' | 'chaal' | 'raise' | 'pack' | 'show' | 'win' | 'add_funds' | 'pot_loan';
+  action: 'join' | 'ready' | 'boot' | 'chaal' | 'raise' | 'pack' | 'show' | 'win' | 'add_funds' | 'pot_loan' | 'pot_continued';
   amount?: number;
   timestamp: string;
 }
@@ -139,6 +140,9 @@ export interface GameRoom {
   players: PlayerInRoom[];
   winnerId?: string;
   winnerName?: string;
+  showdownPending?: boolean;
+  showdownCallerId?: string;
+  showdownCallerName?: string;
   payoutRequest?: PayoutRequest;
   history: GameActionLog[];
   createdAt: string;
