@@ -17,6 +17,7 @@ import {
   Coins,
   History,
   ShieldCheck,
+  UserPlus,
 } from 'lucide-react';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -27,7 +28,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { user, profile, wallet } = useAuth();
+  const { user, profile, wallet, isAdmin } = useAuth();
   const [recentTransactions, setRecentTransactions] = useState<LedgerTransaction[]>([]);
   const [loadingTx, setLoadingTx] = useState<boolean>(true);
 
@@ -92,35 +93,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         </div>
 
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
           <button
+            type="button"
             onClick={() => onNavigate('game-rooms')}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
+            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
           >
-            <PlusCircle className="w-3.5 h-3.5" />
-            <span>Create / Join Room</span>
+            <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Game Rooms</span>
           </button>
           <button
+            type="button"
             onClick={() => onNavigate('send-money')}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
+            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
           >
-            <Send className="w-3.5 h-3.5 text-blue-600" />
-            <span>Send Money</span>
+            <Send className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">Send Money</span>
           </button>
           <button
+            type="button"
             onClick={() => onNavigate('bank-loans')}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
+            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
           >
-            <Landmark className="w-3.5 h-3.5 text-amber-600" />
-            <span>Borrow Bank</span>
+            <Landmark className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="truncate">Bank Loans</span>
           </button>
           <button
+            type="button"
             onClick={() => onNavigate('private-lending')}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
+            className="flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition-colors"
           >
-            <HandCoins className="w-3.5 h-3.5 text-purple-600" />
-            <span>Lend Coins</span>
+            <HandCoins className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+            <span className="truncate">Lend Coins</span>
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => onNavigate('admin')}
+              className="col-span-2 sm:col-span-1 flex items-center justify-center space-x-1.5 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Add Users (Admin)</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -10,12 +10,11 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  deleteDoc,
   onSnapshot,
   collection,
-  query,
-  where,
 } from 'firebase/firestore';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, googleProvider } from '../firebase';
 import { UserProfile, Wallet } from '../types';
 import { getOrCreateWallet } from '../services/ledgerService';
 
@@ -35,39 +34,30 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  switchAccount: (accountKey: 'admin' | 'alice' | 'bob' | 'charlie') => Promise<void>;
+  switchAccount: (accountKey?: 'admin') => Promise<void>;
   loginWithCredentials: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
   loginAsUser: (targetUser: UserProfile) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PRESET_ACCOUNTS = {
-  admin: {
-    uid: 'admin_krishrana1835',
-    email: 'krishrana1835@gmail.com',
-    displayName: 'Krish Rana (Admin)',
-    role: 'admin' as const,
-  },
-  alice: {
-    uid: 'demo_player_alice',
-    email: 'alice.player@teenpatti.app',
-    displayName: 'Alice (Player 1)',
-    role: 'player' as const,
-  },
-  bob: {
-    uid: 'demo_player_bob',
-    email: 'bob.player@teenpatti.app',
-    displayName: 'Bob (Player 2)',
-    role: 'player' as const,
-  },
-  charlie: {
-    uid: 'demo_player_charlie',
-    email: 'charlie.player@teenpatti.app',
-    displayName: 'Charlie (Player 3)',
-    role: 'player' as const,
-  },
+// Admin Account credentials configured per user requirement
+export const ADMIN_CREDENTIALS = {
+  uid: 'admin_sofiamarshal77',
+  email: 'sofiamarshal77@gmail.com',
+  username: 'sofiamarshal77',
+  displayName: 'Sofia Marshal (Admin)',
+  password: 'Krish',
+  role: 'admin' as const,
 };
+
+// Old dummy accounts that MUST be wiped out
+const DUMMY_ACCOUNT_IDS = [
+  'demo_player_alice',
+  'demo_player_bob',
+  'demo_player_charlie',
+  'admin_krishrana1835',
+];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<ActiveUser | null>(null);
@@ -82,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userDocRef = doc(db, 'users', u.uid);
       const userSnap = await getDoc(userDocRef);
 
-      const isAdminEmail = u.email === 'krishrana1835@gmail.com';
+      const isAdminEmail = u.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase() || u.uid === ADMIN_CREDENTIALS.uid;
       const role = roleOverride || (isAdminEmail ? 'admin' : 'player');
 
       let currentProfile: UserProfile;
@@ -121,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Real-time wallet listener
+  // Real-time wallet and profile listeners
   useEffect(() => {
     if (!user) {
       setWallet(null);
@@ -155,7 +145,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
-    // No real-time notifications listener needed as requested
     setUnreadCount(0);
 
     return () => {
@@ -164,8 +153,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user]);
 
+  // Setup admin account & wipe out any old dummy accounts from Firestore
+  const setupAdminAndCleanDummies = async () => {
+    try {
+      // 1. Ensure admin account document exists in 'users'
+      const adminDocRef = doc(db, 'users', ADMIN_CREDENTIALS.uid);
+      const adminSnap = await getDoc(adminDocRef);
+      if (!adminSnap.exists() || adminSnap.data()?.password !== ADMIN_CREDENTIALS.password) {
+        await setDoc(
+          adminDocRef,
+          {
+            id: ADMIN_CREDENTIALS.uid,
+            username: 'Sofia Marshal',
+            email: ADMIN_CREDENTIALS.email,
+            emailVerified: true,
+            role: 'admin',
+            password: ADMIN_CREDENTIALS.password,
+            accountStatus: 'active',
+            startingGrantClaimed: true,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            loansRepaid: 0,
+            totalRepaidAmount: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+
+      // Also ensure in 'admins' collection for RBAC
+      await setDoc(doc(db, 'admins', ADMIN_CREDENTIALS.uid), {
+        email: ADMIN_CREDENTIALS.email,
+        assignedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      // Ensure admin wallet exists
+      await getOrCreateWallet(ADMIN_CREDENTIALS.uid, 'Sofia Marshal');
+
+      // 2. Remove all dummy accounts from Firestore (users & wallets)
+      for (const dummyId of DUMMY_ACCOUNT_IDS) {
+        try {
+          await deleteDoc(doc(db, 'users', dummyId));
+          await deleteDoc(doc(db, 'wallets', dummyId));
+        } catch (e) {
+          // ignore not found
+        }
+      }
+    } catch (err) {
+      console.warn('setupAdminAndCleanDummies warning:', err);
+    }
+  };
+
   // Auth state listener on boot
   useEffect(() => {
+    // Run setup and cleanup in the background
+    setupAdminAndCleanDummies();
+
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         const active: ActiveUser = {
@@ -178,8 +222,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await syncUserData(active);
         setLoading(false);
       } else {
-        // Check if there is a saved logged-in custom user session
+        // Check if there is an active custom session saved in localStorage
         const savedSessionUid = localStorage.getItem('active_session_uid');
+
+        // If saved session was pointing to a removed dummy account, remove it
+        if (savedSessionUid && DUMMY_ACCOUNT_IDS.includes(savedSessionUid)) {
+          localStorage.removeItem('active_session_uid');
+          localStorage.removeItem('active_player_account');
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
         if (savedSessionUid) {
           try {
             const userDocRef = doc(db, 'users', savedSessionUid);
@@ -204,17 +258,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // Fallback to saved preset account from localStorage
-        const savedAccount = localStorage.getItem('active_player_account') as 'admin' | 'alice' | 'bob' | 'charlie' | null;
-        const targetPreset = PRESET_ACCOUNTS[savedAccount || 'admin'];
-        const active: ActiveUser = {
-          uid: targetPreset.uid,
-          email: targetPreset.email,
-          displayName: targetPreset.displayName,
-          isDemo: true,
-        };
-        setUser(active);
-        await syncUserData(active, targetPreset.role);
+        // NO automatic fallback to dummy accounts!
+        // Show login page initially
+        localStorage.removeItem('active_player_account');
+        setUser(null);
+        setProfile(null);
+        setWallet(null);
         setLoading(false);
       }
     });
@@ -245,6 +294,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Log in with username or email and plain text password.
+   * Special support for Admin account sofiamarshal77@gmail.com with password Krish.
    */
   const loginWithCredentials = async (
     identifier: string,
@@ -260,9 +310,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Please enter both username/email and password.' };
       }
 
-      // Query users collection in Firestore
+      // 1. Direct check for Admin account sofiamarshal77@gmail.com with password Krish
+      const isAdminIdentifier =
+        trimmedId === ADMIN_CREDENTIALS.email.toLowerCase() ||
+        trimmedId === ADMIN_CREDENTIALS.username.toLowerCase() ||
+        trimmedId === 'admin';
+
+      if (isAdminIdentifier) {
+        if (trimmedPass !== ADMIN_CREDENTIALS.password) {
+          setLoading(false);
+          return { success: false, error: 'Incorrect password for admin account.' };
+        }
+
+        // Setup admin profile & session
+        const adminProfile: UserProfile = {
+          id: ADMIN_CREDENTIALS.uid,
+          username: 'Sofia Marshal',
+          email: ADMIN_CREDENTIALS.email,
+          emailVerified: true,
+          role: 'admin',
+          password: ADMIN_CREDENTIALS.password,
+          accountStatus: 'active',
+          startingGrantClaimed: true,
+          gamesPlayed: 0,
+          gamesWon: 0,
+          loansRepaid: 0,
+          totalRepaidAmount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Persist admin doc in Firestore if needed
+        await setDoc(doc(db, 'users', ADMIN_CREDENTIALS.uid), adminProfile, { merge: true });
+        const adminWallet = await getOrCreateWallet(ADMIN_CREDENTIALS.uid, 'Sofia Marshal');
+
+        const active: ActiveUser = {
+          uid: ADMIN_CREDENTIALS.uid,
+          email: ADMIN_CREDENTIALS.email,
+          displayName: 'Sofia Marshal (Admin)',
+          isDemo: false,
+        };
+
+        localStorage.setItem('active_session_uid', ADMIN_CREDENTIALS.uid);
+        localStorage.removeItem('active_player_account');
+
+        setUser(active);
+        setProfile(adminProfile);
+        setWallet(adminWallet);
+        setLoading(false);
+        return { success: true };
+      }
+
+      // 2. Query users collection in Firestore for created accounts
       const usersSnap = await getDocs(collection(db, 'users'));
       const matchedDoc = usersSnap.docs.find((d) => {
+        // Exclude old dummy accounts if any linger
+        if (DUMMY_ACCOUNT_IDS.includes(d.id)) return false;
         const u = d.data() as UserProfile;
         const matchesName = u.username?.toLowerCase() === trimmedId;
         const matchesEmail = u.email?.toLowerCase() === trimmedId;
@@ -271,26 +374,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!matchedDoc) {
-        // Also check if admin or preset player is being logged into with default game password
-        const isPresetAdmin = trimmedId === 'admin' || trimmedId === 'krishrana1835@gmail.com';
-        if (isPresetAdmin && (trimmedPass === 'admin' || trimmedPass === 'admin123' || trimmedPass === 'password')) {
-          await switchAccount('admin');
-          return { success: true };
-        }
         setLoading(false);
-        return { success: false, error: 'No user found with this username or email.' };
+        return { success: false, error: 'No account found with this username or email.' };
       }
 
       const userData = matchedDoc.data() as UserProfile;
 
       // Verify plain text password
-      // If user doc doesn't have password stored yet (e.g. preset accounts), accept and set it
       if (userData.password && userData.password !== trimmedPass) {
         setLoading(false);
         return { success: false, error: 'Incorrect password. Please try again.' };
       }
 
-      // If user doc didn't have password, record it
+      // If user doc didn't have password stored yet, store it
       if (!userData.password) {
         await setDoc(doc(db, 'users', matchedDoc.id), { password: trimmedPass }, { merge: true });
         userData.password = trimmedPass;
@@ -342,20 +438,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   };
 
-  const switchAccount = async (accountKey: 'admin' | 'alice' | 'bob' | 'charlie') => {
-    setLoading(true);
-    localStorage.removeItem('active_session_uid');
-    localStorage.setItem('active_player_account', accountKey);
-    const preset = PRESET_ACCOUNTS[accountKey];
-    const active: ActiveUser = {
-      uid: preset.uid,
-      email: preset.email,
-      displayName: preset.displayName,
-      isDemo: true,
-    };
-    setUser(active);
-    await syncUserData(active, preset.role);
-    setLoading(false);
+  const switchAccount = async (accountKey?: 'admin') => {
+    if (accountKey === 'admin') {
+      await loginWithCredentials('sofiamarshal77@gmail.com', 'Krish');
+    }
   };
 
   const signOut = async () => {
@@ -363,14 +449,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem('active_session_uid');
       localStorage.removeItem('active_player_account');
       await fbSignOut(auth);
-      // switch to alice or default
-      await switchAccount('alice');
     } catch (err) {
       console.error(err);
+    } finally {
+      setUser(null);
+      setProfile(null);
+      setWallet(null);
     }
   };
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'krishrana1835@gmail.com';
+  const isAdmin =
+    profile?.role === 'admin' ||
+    user?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase() ||
+    user?.uid === ADMIN_CREDENTIALS.uid;
 
   return (
     <AuthContext.Provider

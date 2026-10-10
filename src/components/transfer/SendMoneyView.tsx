@@ -51,10 +51,11 @@ export const SendMoneyView: React.FC = () => {
     setErrorMessage(null);
 
     try {
+      const DUMMY_ACCOUNT_IDS = ['demo_player_alice', 'demo_player_bob', 'demo_player_charlie', 'admin_krishrana1835'];
       const snap = await getDocs(collection(db, 'users'));
       const all = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as UserProfile))
-        .filter((u) => u.id !== user.uid); // exclude self
+        .filter((u) => u.id !== user.uid && !DUMMY_ACCOUNT_IDS.includes(u.id)); // exclude self and dummies
 
       const queryTerm = recipientInput.trim().toLowerCase();
       const filtered = all.filter(

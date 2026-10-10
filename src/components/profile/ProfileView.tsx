@@ -14,11 +14,12 @@ import {
   Eye,
   EyeOff,
   Edit2,
+  LogOut,
 } from 'lucide-react';
 import { updateUserPassword } from '../../services/userService';
 
 export const ProfileView: React.FC = () => {
-  const { user, profile, wallet, isAdmin } = useAuth();
+  const { user, profile, wallet, isAdmin, signOut } = useAuth();
   const [copiedId, setCopiedId] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isChangingPass, setIsChangingPass] = useState<boolean>(false);
@@ -226,6 +227,22 @@ export const ProfileView: React.FC = () => {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Account Session Actions */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">Session Management</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Sign out of this session to return to the login screen.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => signOut()}
+          className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold text-xs flex items-center space-x-2 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign Out Account</span>
+        </button>
       </div>
     </div>
   );

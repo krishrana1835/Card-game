@@ -108,10 +108,19 @@ export const AdminPanelView: React.FC = () => {
     );
 
     // Users listener
+    const DUMMY_ACCOUNT_IDS = [
+      'demo_player_alice',
+      'demo_player_bob',
+      'demo_player_charlie',
+      'admin_krishrana1835',
+    ];
+
     const unsubUsers = onSnapshot(
       collection(db, 'users'),
       (snap) => {
-        const users = snap.docs.map((d) => ({ id: d.id, ...d.data() } as UserProfile));
+        const users = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as UserProfile))
+          .filter((u) => !DUMMY_ACCOUNT_IDS.includes(u.id));
         setUserList(users);
         setStats((prev) => ({ ...prev, userCount: users.length }));
 
@@ -342,43 +351,46 @@ export const AdminPanelView: React.FC = () => {
       </div>
 
       {/* Admin Tab Switcher */}
-      <div className="flex border-b border-slate-200 space-x-2">
+      <div className="flex border-b border-slate-200 space-x-1 sm:space-x-2 overflow-x-auto scrollbar-none pb-0.5">
         <button
+          type="button"
           onClick={() => setActiveAdminTab('users')}
-          className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
+          className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
             activeAdminTab === 'users'
               ? 'border-slate-900 text-slate-900 bg-white rounded-t-lg'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <UserPlus className="w-4 h-4 text-emerald-600" />
-          <span>User Management & Passwords</span>
+          <UserPlus className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>Users & Passwords</span>
           <span className="ml-1 bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded-full text-[10px]">
             {userList.length}
           </span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveAdminTab('config')}
-          className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
+          className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
             activeAdminTab === 'config'
               ? 'border-slate-900 text-slate-900 bg-white rounded-t-lg'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <Landmark className="w-4 h-4 text-blue-600" />
-          <span>Virtual Bank & Rules Config</span>
+          <Landmark className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>Bank & Rules Config</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveAdminTab('audit')}
-          className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${
+          className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
             activeAdminTab === 'audit'
               ? 'border-slate-900 text-slate-900 bg-white rounded-t-lg'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <Settings className="w-4 h-4 text-slate-600" />
+          <Settings className="w-4 h-4 text-slate-600 shrink-0" />
           <span>System Audit Log</span>
           <span className="ml-1 bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded-full text-[10px]">
             {auditLogs.length}

@@ -280,11 +280,12 @@ export const BankLoansView: React.FC = () => {
             </div>
 
             <button
+              type="button"
               onClick={() => {
                 setRepayAmount(totalActiveDebt);
                 setShowRepayModal(true);
               }}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors text-center"
             >
               Make Repayment
             </button>
@@ -443,8 +444,41 @@ export const BankLoansView: React.FC = () => {
                   onChange={(e) => setRepayAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-900"
                 />
-                <div className="flex justify-between text-[11px] text-slate-500 mt-1">
-                  <span>Available Balance: {(wallet?.availableBalance || 0).toLocaleString()} coins</span>
+
+                {/* Mobile Quick-Fill Chips */}
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRepayAmount(Math.round(totalActiveDebt * 0.25))}
+                    className="py-1 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded text-center transition-colors"
+                  >
+                    25%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRepayAmount(Math.round(totalActiveDebt * 0.5))}
+                    className="py-1 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded text-center transition-colors"
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRepayAmount(Math.round(totalActiveDebt * 0.75))}
+                    className="py-1 px-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded text-center transition-colors"
+                  >
+                    75%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRepayAmount(Math.min(totalActiveDebt, wallet?.availableBalance || 0))}
+                    className="py-1 px-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-bold rounded text-center transition-colors"
+                  >
+                    100% Full
+                  </button>
+                </div>
+
+                <div className="flex justify-between text-[11px] text-slate-500 mt-2">
+                  <span>Available Balance: ₹{(wallet?.availableBalance || 0).toLocaleString()}</span>
                   <button
                     type="button"
                     onClick={() => setRepayAmount(Math.min(totalActiveDebt, wallet?.availableBalance || 0))}
@@ -455,18 +489,18 @@ export const BankLoansView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowRepayModal(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="px-4 py-2.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 flex-1 sm:flex-initial"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isRepaying || repayAmount <= 0 || repayAmount > (wallet?.availableBalance || 0)}
-                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs"
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs flex-1 sm:flex-initial text-center"
                 >
                   {isRepaying ? 'Processing...' : 'Authorize Repayment'}
                 </button>

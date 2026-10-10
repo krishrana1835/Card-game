@@ -281,10 +281,10 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
       {/* Main Table / Game Arena Card */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
         {/* Table Header Bar */}
-        <div className="bg-slate-900 text-white p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-bold">{room.name}</h1>
+        <div className="bg-slate-900 text-white p-3.5 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
+          <div className="w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-1.5 sm:space-x-2">
+              <h1 className="text-base sm:text-lg font-bold">{room.name}</h1>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
                 {room.status.replace(/_/g, ' ')}
               </span>
@@ -293,26 +293,26 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Host: <span className="text-slate-200 font-medium">{room.hostName}</span> | Boot Entry: {room.bootAmount} coins | Min Bet: {room.minBet} coins
+              Host: <span className="text-slate-200 font-medium">{room.hostName}</span> | Boot: {room.bootAmount.toLocaleString()} coins | Min Bet: {room.minBet.toLocaleString()} coins
             </p>
           </div>
 
           {/* Central Escrow Pot Display & In-Room Bank Tools */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full md:w-auto">
             {/* Escrow Pot */}
-            <div className="flex items-center space-x-3 bg-slate-800/90 px-4 py-2.5 rounded-lg border border-slate-700">
+            <div className="flex items-center justify-between sm:justify-start space-x-3 bg-slate-800/90 px-3.5 py-2.5 rounded-lg border border-slate-700">
               <div>
                 <p className="text-[10px] text-slate-400 uppercase font-semibold">Shared Escrow Pot</p>
                 <div className="flex items-baseline space-x-1.5 mt-0.5">
-                  <Coins className="w-5 h-5 text-amber-400" />
-                  <span className="text-2xl font-black text-amber-400">
+                  <Coins className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-xl sm:text-2xl font-black text-amber-400">
                     ₹{room.currentPot.toLocaleString()}
                   </span>
                 </div>
               </div>
 
               {room.status === 'active' && (
-                <div className="border-l border-slate-700 pl-3 text-center">
+                <div className="border-l border-slate-700 pl-3 text-right sm:text-center">
                   <p className="text-[10px] text-slate-400 uppercase font-semibold">Current Call</p>
                   <p className="text-sm font-bold text-slate-200">₹{room.currentBet.toLocaleString()}</p>
                 </div>
@@ -328,11 +328,11 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                 </span>
                 <span className="text-[10px] text-slate-400 ml-1">(Resets every pot)</span>
               </div>
-              <div className="flex items-center space-x-2 mt-1">
+              <div className="flex items-center space-x-2 mt-1.5">
                 <button
                   type="button"
                   onClick={() => setShowPotLoanModal(true)}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded flex items-center space-x-1 shadow-xs transition-colors"
+                  className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded flex items-center justify-center space-x-1 shadow-xs transition-colors"
                 >
                   <Landmark className="w-3 h-3" />
                   <span>Borrow Loan</span>
@@ -340,7 +340,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                 <button
                   type="button"
                   onClick={() => setShowAddFundsModal(true)}
-                  className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-bold rounded flex items-center space-x-1 transition-colors"
+                  className="flex-1 py-1.5 px-2 bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-bold rounded flex items-center justify-center space-x-1 transition-colors"
                 >
                   <PlusCircle className="w-3 h-3 text-emerald-400" />
                   <span>Add Money</span>
@@ -693,31 +693,31 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
               </div>
 
               {isMyTurn ? (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <button
                     onClick={handleChaal}
                     disabled={isSubmitting}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors text-center"
                   >
-                    Chaal / Call ({room.currentBet} coins)
+                    Chaal / Call ({room.currentBet.toLocaleString()})
                   </button>
 
-                  <div className="flex items-center space-x-1.5 bg-white border border-slate-300 rounded-lg p-1">
+                  <div className="flex items-center space-x-1 bg-white border border-slate-300 rounded-lg p-1 flex-1 sm:flex-initial justify-between">
                     <input
                       type="number"
                       min={room.minBet}
-                      max={room.maxBet || 2000}
-                      step={10}
+                      max={room.maxBet || 20000000}
+                      step={1000}
                       value={raiseAmount}
                       onChange={(e) => setRaiseAmount(Math.max(1, Number(e.target.value)))}
-                      className="w-20 px-2 py-1 text-xs border border-slate-200 rounded font-semibold text-slate-800"
+                      className="w-20 sm:w-24 px-2 py-1 text-xs border border-slate-200 rounded font-semibold text-slate-800"
                     />
                     <button
                       onClick={handleRaise}
                       disabled={isSubmitting}
-                      className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded shadow-xs"
+                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded shadow-xs whitespace-nowrap"
                     >
-                      Raise (+{raiseAmount})
+                      Raise (+{raiseAmount.toLocaleString()})
                     </button>
                   </div>
 
@@ -725,7 +725,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                     <button
                       onClick={handleShowdown}
                       disabled={isSubmitting}
-                      className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-xs"
+                      className="flex-1 sm:flex-initial px-3 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-xs text-center"
                     >
                       Showdown
                     </button>
@@ -734,7 +734,7 @@ export const GameRoomDetail: React.FC<GameRoomDetailProps> = ({ roomId, onBack }
                   <button
                     onClick={handleFold}
                     disabled={isSubmitting}
-                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-xs"
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-xs text-center"
                   >
                     Pack / Fold
                   </button>

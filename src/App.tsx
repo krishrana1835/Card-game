@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginPage } from './components/auth/LoginPage';
 import { Navbar } from './components/layout/Navbar';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { GameRoomsView } from './components/games/GameRoomsView';
@@ -10,20 +11,25 @@ import { TransactionsView } from './components/transactions/TransactionsView';
 import { NotificationsView } from './components/notifications/NotificationsView';
 import { ProfileView } from './components/profile/ProfileView';
 import { AdminPanelView } from './components/admin/AdminPanelView';
-import { Shield, Coins, AlertCircle } from 'lucide-react';
+import { Coins } from 'lucide-react';
 
 function MainApp() {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const { loading, isAdmin } = useAuth();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-        <div className="w-12 h-12 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin mb-4" />
-        <h2 className="text-sm font-bold text-slate-800">Connecting to Realtime Ledger...</h2>
-        <p className="text-xs text-slate-500 mt-1">Initializing Firebase Authentication & Firestore state</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-white">
+        <div className="w-12 h-12 border-4 border-slate-800 border-t-emerald-500 rounded-full animate-spin mb-4" />
+        <h2 className="text-sm font-bold text-slate-100">Connecting to Realtime Ledger...</h2>
+        <p className="text-xs text-slate-400 mt-1">Initializing Firebase Authentication & Firestore state</p>
       </div>
     );
+  }
+
+  // Initially show login page if user is not authenticated
+  if (!user) {
+    return <LoginPage />;
   }
 
   const renderContent = () => {
@@ -57,7 +63,7 @@ function MainApp() {
       <Navbar currentTab={currentTab} onSelectTab={(tab) => setCurrentTab(tab)} />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         {renderContent()}
       </main>
 

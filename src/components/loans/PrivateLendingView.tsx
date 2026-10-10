@@ -82,10 +82,11 @@ export const PrivateLendingView: React.FC = () => {
   const handleSearchBorrower = async () => {
     if (!borrowerSearch.trim() || !user) return;
     try {
+      const DUMMY_ACCOUNT_IDS = ['demo_player_alice', 'demo_player_bob', 'demo_player_charlie', 'admin_krishrana1835'];
       const snap = await getDocs(collection(db, 'users'));
       const all = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as UserProfile))
-        .filter((u) => u.id !== user.uid);
+        .filter((u) => u.id !== user.uid && !DUMMY_ACCOUNT_IDS.includes(u.id));
       const filtered = all.filter(
         (u) =>
           u.username.toLowerCase().includes(borrowerSearch.toLowerCase()) ||
@@ -194,30 +195,33 @@ export const PrivateLendingView: React.FC = () => {
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 space-x-4">
+      <div className="flex border-b border-slate-200 space-x-2 sm:space-x-4 overflow-x-auto scrollbar-none pb-0.5">
         <button
+          type="button"
           onClick={() => setActiveTab('borrowed')}
-          className={`pb-3 text-xs font-bold transition-colors border-b-2 ${
+          className={`pb-2.5 sm:pb-3 px-1 text-xs font-bold whitespace-nowrap transition-colors border-b-2 ${
             activeTab === 'borrowed'
               ? 'border-slate-900 text-slate-900'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          Loans I Borrowed ({loansBorrowed.filter((l) => l.status === 'active').length} Active)
+          Borrowed ({loansBorrowed.filter((l) => l.status === 'active').length} Active)
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('lent')}
-          className={`pb-3 text-xs font-bold transition-colors border-b-2 ${
+          className={`pb-2.5 sm:pb-3 px-1 text-xs font-bold whitespace-nowrap transition-colors border-b-2 ${
             activeTab === 'lent'
               ? 'border-slate-900 text-slate-900'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          Loans I Lent ({loansLent.length})
+          Lent ({loansLent.length})
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('offers')}
-          className={`pb-3 text-xs font-bold transition-colors border-b-2 flex items-center space-x-1.5 ${
+          className={`pb-2.5 sm:pb-3 px-1 text-xs font-bold whitespace-nowrap transition-colors border-b-2 flex items-center space-x-1.5 ${
             activeTab === 'offers'
               ? 'border-slate-900 text-slate-900'
               : 'border-transparent text-slate-500 hover:text-slate-800'
